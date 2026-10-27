@@ -20,7 +20,7 @@ wait_for_deployment() {
 }
 
 # Stop Deployment
-curl -k -u "$ogg_auth" \
+curl -sk -u "$ogg_auth" \
 -d '{"status": "stopped","enabled": false}' \
 -X PATCH "$ogg_api/deployments/${deployment_name}"
 echo
@@ -32,7 +32,7 @@ docker exec -i ogg234demo curl -su "$ogg_auth" "http://172.28.0.101:9011/service
 echo
 
 # Start Deployment
-curl -k -u "$ogg_auth" \
+curl -sk -u "$ogg_auth" \
 -d '{"status": "running","enabled": true}' \
 -X PATCH "$ogg_api/deployments/${deployment_name}"
 echo
