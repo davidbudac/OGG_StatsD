@@ -1,12 +1,15 @@
 #!/bin/bash
 
-#docker compose up -d
-#echo 
-#echo " --->>> WATTING ~40 Seconds for all OGG Services to start ..........."
-#sleep 40
+# Wait for GoldenGate and both databases to be healthy (first start takes a few minutes)
+for container in ogg234demo db233demoW db233demoE; do
+    echo "Waiting for $container to be healthy ......"
+    until [ "$(docker inspect -f '{{.State.Health.Status}}' $container 2>/dev/null)" = "healthy" ]; do
+        sleep 10
+    done
+done
 
 hostname_ogg=("localhost")                             # Default to localhost for local Docker build
-conn_propeties=("WEST:172.13.0.102" "EAST:172.13.0.103")   # Database Connection Properties: (<alias name>:<database host>)
+conn_propeties=("WEST:172.28.0.102" "EAST:172.28.0.103")   # Database Connection Properties: (<alias name>:<database host>)
 list_region=("WEST" "EAST")                            # Database Regions Name
 extract_properties=("WEST:EWEST:ew" "EAST:EEAST:ee")   # Name for the Extract (<connection alias>:<Extract_name>:<trail>)
 replicat_properties=("WEST:REAST:ee" "EAST:RWEST:ew")  # Name for the replicat represents where the data come from (<connection alias>:<Replicat_name>:<trail>)
