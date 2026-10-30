@@ -25,7 +25,7 @@ services:
   gg:
     container_name: ogg234demo
     hostname: ogg234demo
-    image: container-registry.oracle.com/goldengate/goldengate-oracle-free:latest
+    image: container-registry.oracle.com/goldengate/goldengate-oracle-free:23.26.3.0.6
     restart: unless-stopped
     ports:
       - "1055:8443"
