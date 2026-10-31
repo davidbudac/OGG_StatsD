@@ -8,8 +8,8 @@ Telegraf writes them to InfluxDB 2, and Grafana shows them on a provisioned dash
 | Container    | Image                                                                    | Host port |
 |--------------|--------------------------------------------------------------------------|-----------|
 | ogg234demo   | `container-registry.oracle.com/goldengate/goldengate-oracle-free:23.26.3.0.6` | 1055 (HTTPS) |
-| db233demoW   | `alexlima/oracle-free:23.3-slim-ogg` (HR schema)                         | 1524      |
-| db233demoE   | `alexlima/oracle-free:23.3-slim-ogg` (HR schema)                         | 1525      |
+| db233demoW   | `gvenzl/oracle-free:23.26.3-slim` (HR schema, see `db/`)                | 1524      |
+| db233demoE   | `gvenzl/oracle-free:23.26.3-slim` (HR schema, see `db/`)                | 1525      |
 | influxdb     | `influxdb:2.7-alpine`                                                    | 8086      |
 | telegraf     | `telegraf:1.30.2`                                                        | 8125/udp  |
 | grafana      | `grafana/grafana:10.4.2`                                                 | 3000      |

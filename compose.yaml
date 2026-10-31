@@ -1,5 +1,5 @@
 # This Docker Compose file is for education purpose only and it contains all necessary components 
-# to instantiate one Oracle GoldenGate 23 instance and two Oracle Database 23 Free instances
+# to instantiate one Oracle GoldenGate 23 instance and two Oracle AI Database 26ai Free instances
 
 # This yaml file will create 3 docker containers:
 #   1- One Oracle Goldengate 23 Hub
@@ -43,11 +43,14 @@ services:
       ogg_docker_network_234:
         ipv4_address: ${DOCKER_OGG_WEST_IP}
 
-# Create WEST Side Database 23.3 Free
+# Create WEST Side Database 26ai Free (23.26.3)
   databaseW:
     container_name: db233demoW
     hostname: db233demoW
-    image: alexlima/oracle-free:23.3-slim-ogg
+    image: gvenzl/oracle-free:23.26.3-slim
+    volumes:
+      - ./db/initdb:/container-entrypoint-initdb.d:ro
+      - ./db/hr:/opt/oracle/hr:ro
     ports:
       - "1524:1521"
     env_file:
@@ -63,11 +66,14 @@ services:
         ipv4_address: ${DOCKER_DB_WEST_IP}
 
 
-# Create EAST Side Database 23.3 Free
+# Create EAST Side Database 26ai Free (23.26.3)
   databaseE:
     container_name: db233demoE
     hostname: db233demoE
-    image: alexlima/oracle-free:23.3-slim-ogg
+    image: gvenzl/oracle-free:23.26.3-slim
+    volumes:
+      - ./db/initdb:/container-entrypoint-initdb.d:ro
+      - ./db/hr:/opt/oracle/hr:ro
     ports:
       - "1525:1521"
     env_file:
