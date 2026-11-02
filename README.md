@@ -41,7 +41,20 @@ Then open:
 - Grafana: http://localhost:3000 → Dashboards → Main Dashboard
 - InfluxDB: http://localhost:8086
 
-Generate some changes on the WEST database to see the counters move, e.g.:
+Generate replication traffic so the dashboards have something to show:
+
+```bash
+./load.sh                 # 50 rows/s on WEST and EAST for 10 minutes
+./load.sh 1800 200        # 200 rows/s for 30 minutes
+./load.sh burst           # one 20k-row transaction on WEST (shows up as an open transaction)
+./load.sh stop            # end a running load
+```
+
+The load runs on its own table, `HR.LOADGEN`, which GoldenGate replicates like the
+rest of HR. Each database changes only its own rows, so the two directions never
+conflict.
+
+Or make a few changes by hand on the WEST database, e.g.:
 
 ```bash
 docker exec -i db233demoW sqlplus -s hr/Welcome##123@FREEPDB1 <<'SQL'

@@ -29,7 +29,7 @@
       "title": "Replication paths",
       "options": {
         "mode": "markdown",
-        "content": "**West \u2192 East** is extract **EWEST** and replicat **RWEST** on trail `ew`. **East \u2192 West** is extract **EEAST** and replicat **REAST** on trail `ee`. Checkpoint lag is how far that process is behind the change it is reading. Heartbeat lag is end-to-end; heartbeats are written every 60 seconds. Discards, failed conflicts, and integrated batch errors should stay at zero."
+        "content": "**West → East** is extract **EWEST** and replicat **RWEST** on trail `ew`. **East → West** is extract **EEAST** and replicat **REAST** on trail `ee`. Checkpoint lag is how far that process is behind the change it is reading. Heartbeat lag is end-to-end; heartbeats are written every 60 seconds. Discards, failed conflicts, and conversion errors should stay at zero."
       },
       "id": 1,
       "gridPos": {
@@ -45,8 +45,8 @@
     },
     {
       "type": "stat",
-      "title": "Process status",
-      "description": "GoldenGate resource-status running flag. Stopped means the extract or replicat is not applying or capturing.",
+      "title": "Process health",
+      "description": "One tile per process. Stopped; Stalled (running but not caught up, and its trail position has not moved for 2 minutes; lag metrics freeze in this state, so they look fine); Lagging (last operation more than 60 s behind); Processing; Caught up.",
       "datasource": {
         "type": "influxdb",
         "uid": "bdkbvyvidpvcwc"
@@ -59,26 +59,32 @@
           },
           "mappings": [
             {
-              "type": "range",
+              "type": "value",
               "options": {
-                "from": -0.1,
-                "to": 0.5,
-                "result": {
+                "0": {
+                  "text": "Stopped",
                   "color": "red",
-                  "index": 0,
-                  "text": "Stopped"
-                }
-              }
-            },
-            {
-              "type": "range",
-              "options": {
-                "from": 0.5,
-                "to": 1.5,
-                "result": {
+                  "index": 0
+                },
+                "1": {
+                  "text": "Stalled",
+                  "color": "red",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Lagging",
+                  "color": "orange",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Processing",
                   "color": "green",
-                  "index": 1,
-                  "text": "Running"
+                  "index": 3
+                },
+                "4": {
+                  "text": "Caught up",
+                  "color": "green",
+                  "index": 4
                 }
               }
             },
@@ -87,9 +93,9 @@
               "options": {
                 "match": "null",
                 "result": {
+                  "text": "No data",
                   "color": "text",
-                  "index": 2,
-                  "text": "No data"
+                  "index": 4
                 }
               }
             }
@@ -102,136 +108,17 @@
                 "value": null
               },
               {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short",
-          "displayName": "${__field.labels.resource-name}",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "value_and_name",
-        "wideLayout": true,
-        "text": {
-          "titleSize": 14,
-          "valueSize": 22
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "bdkbvyvidpvcwc"
-          },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"resource-status_running\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"resource-name\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"resource-name\"])\n  |> group(columns: [\"resource-name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
-          "refId": "A"
-        }
-      ],
-      "id": 2,
-      "gridPos": {
-        "h": 6,
-        "w": 7,
-        "x": 0,
-        "y": 3
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Caught up",
-      "description": "End-of-file on the source the process is reading. Caught up means an extract is at the end of the redo stream, or a replicat is at the end of its trail.",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "bdkbvyvidpvcwc"
-      },
-      "transparent": false,
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "range",
-              "options": {
-                "from": -0.1,
-                "to": 0.5,
-                "result": {
-                  "color": "blue",
-                  "index": 0,
-                  "text": "Reading"
-                }
-              }
-            },
-            {
-              "type": "range",
-              "options": {
-                "from": 0.5,
-                "to": 1.5,
-                "result": {
-                  "color": "green",
-                  "index": 1,
-                  "text": "Caught up"
-                }
-              }
-            },
-            {
-              "type": "value",
-              "options": {
-                "false": {
-                  "color": "blue",
-                  "index": 2,
-                  "text": "Reading"
-                },
-                "true": {
-                  "color": "green",
-                  "index": 3,
-                  "text": "Caught up"
-                }
-              }
-            },
-            {
-              "type": "special",
-              "options": {
-                "match": "null",
-                "result": {
-                  "color": "text",
-                  "index": 4,
-                  "text": "No data"
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
+                "color": "orange",
+                "value": 2
               },
               {
                 "color": "green",
-                "value": 1
+                "value": 3
               }
             ]
           },
           "unit": "short",
-          "displayName": "${__field.labels.processName}",
+          "displayName": "${__field.labels.process}",
           "decimals": 0
         },
         "overrides": []
@@ -262,15 +149,15 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_end-of-file\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
-          "refId": "A"
+          "refId": "A",
+          "query": "import \"date\"\n\nrunning = from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"resource-status_running\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"resource-name\"] =~ /${process:regex}/)\n  |> group(columns: [\"resource-name\"])\n  |> last()\n  |> map(fn: (r) => ({process: r[\"resource-name\"], _field: \"running\", _value: float(v: r._value)}))\n  |> group()\neof = from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_end-of-file\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> group(columns: [\"processName\"])\n  |> last()\n  |> map(fn: (r) => ({process: r.processName, _field: \"eof\", _value: float(v: r._value)}))\n  |> group()\nlag = from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> group(columns: [\"processName\"])\n  |> last()\n  // GoldenGate reports this lag in nanoseconds; convert to seconds\n  |> map(fn: (r) => ({process: r.processName, _field: \"lag\", _value: float(v: r._value) / 1000000000.0}))\n  |> group()\n\n// Has the process advanced its trail position in the last 2 minutes? (replicats: read side, extracts: write side)\nmoved = from(bucket: \"goldengate-bucket\")\n  |> range(start: date.sub(d: 2m, from: v.timeRangeStop), stop: v.timeRangeStop)\n  |> filter(fn: (r) => (r._measurement == \"trail-input_trail-rba\" and r.processType == \"replicat\") or (r._measurement == \"trail-output_trail-rba\" and r.processType == \"extract\"))\n  |> filter(fn: (r) => r._field == \"value\" and r.processName =~ /${process:regex}/)\n  |> group(columns: [\"processName\"])\n  |> spread()\n  |> map(fn: (r) => ({process: r.processName, _field: \"moved\", _value: if r._value > 0 then 1.0 else 0.0}))\n  |> group()\n\n// 0 stopped, 1 stalled (not caught up, position frozen 2 min), 2 lagging (> 60 s behind), 3 processing, 4 caught up\nunion(tables: [running, eof, lag, moved])\n  |> group(columns: [\"process\"])\n  |> pivot(rowKey: [\"process\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time: v.timeRangeStop,\n      process: r.process,\n      _value: if not exists r.running or r.running < 0.5 then 0.0\n              else if exists r.eof and r.eof < 0.5 and exists r.moved and r.moved < 0.5 then 1.0\n              else if exists r.lag and r.lag > 60.0 then 2.0\n              else if exists r.eof and r.eof < 0.5 then 3.0\n              else 4.0,\n  }))\n  |> group(columns: [\"process\"])"
         }
       ],
-      "id": 3,
+      "id": 50,
       "gridPos": {
         "h": 6,
-        "w": 5,
-        "x": 7,
+        "w": 12,
+        "x": 0,
         "y": 3
       }
     },
@@ -340,7 +227,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -457,6 +344,21 @@
           "displayName": "${__field.labels.resource-name}",
           "mappings": [
             {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Stopped",
+                  "color": "red",
+                  "index": 3
+                },
+                "1": {
+                  "text": "Running",
+                  "color": "green",
+                  "index": 4
+                }
+              }
+            },
+            {
               "type": "range",
               "options": {
                 "from": -0.1,
@@ -517,7 +419,7 @@
         },
         "mergeValues": true,
         "rowHeight": 0.8,
-        "showValue": "auto",
+        "showValue": "never",
         "tooltip": {
           "mode": "single",
           "sort": "none"
@@ -557,7 +459,8 @@
               "type": "auto"
             },
             "filterable": true,
-            "inspect": false
+            "inspect": false,
+            "minWidth": 70
           },
           "thresholds": {
             "mode": "absolute",
@@ -571,7 +474,7 @@
           "color": {
             "mode": "thresholds"
           },
-          "noValue": "\u2014"
+          "noValue": "—"
         },
         "overrides": [
           {
@@ -938,7 +841,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Batch errors"
+              "options": "Conversion errors"
             },
             "properties": [
               {
@@ -975,6 +878,78 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Process"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Path"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trail sequence"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trail RBA"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
           }
         ]
       },
@@ -999,7 +974,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "import \"array\"\nimport \"join\"\n\nwide = union(tables: [\n  array.from(rows: [\n    {process: \"_schema\", _field: \"Status\", _value: -1.0},\n    {process: \"_schema\", _field: \"Checkpoint lag\", _value: 0.0},\n    {process: \"_schema\", _field: \"Heartbeat lag\", _value: 0.0},\n    {process: \"_schema\", _field: \"Trail sequence\", _value: 0.0},\n    {process: \"_schema\", _field: \"Trail RBA\", _value: 0.0},\n    {process: \"_schema\", _field: \"Inserts/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Updates/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Deletes/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Discards\", _value: 0.0},\n    {process: \"_schema\", _field: \"Failed conflicts\", _value: 0.0},\n    {process: \"_schema\", _field: \"Batch errors\", _value: 0.0},\n  ]),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"resource-status_running\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"resource-name\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"resource-name\"])\n    |> group(columns: [\"resource-name\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"resource-name\"], _field: \"Status\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Checkpoint lag\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"heartbeat-timings_heartbeat-lag\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"heartbeat-name\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"heartbeat-name\"])\n    |> group(columns: [\"heartbeat-name\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"heartbeat-name\"], _field: \"Heartbeat lag\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-output_trail-seq\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail sequence\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-input_trail-seq\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail sequence\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-output_trail-rba\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail RBA\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-input_trail-rba\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail RBA\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Inserts/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Inserts/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Updates/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Updates/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Deletes/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Deletes/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Discards\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Discards\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conflicts-failed\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Failed conflicts\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"batch-sql-stats_total-batches-in-error\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Batch errors\", _value: float(v: r._value)}))\n    |> group()\n])\n  |> group(columns: [\"process\", \"_field\"])\n  |> max()\n  |> group()\n  |> pivot(rowKey: [\"process\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nskeleton = array.from(rows: [\n  {process: \"EWEST\"},\n  {process: \"RWEST\"},\n  {process: \"EEAST\"},\n  {process: \"REAST\"},\n])\n  |> filter(fn: (r) => r.process =~ /${process:regex}/)\n\njoin.left(\n  left: skeleton,\n  right: wide,\n  on: (l, r) => l.process == r.process,\n  as: (l, r) => ({\n    Process: l.process,\n    Path: if l.process == \"EWEST\" or l.process == \"RWEST\" then \"West \u2192 East\" else \"East \u2192 West\",\n    Role: if l.process == \"EWEST\" or l.process == \"EEAST\" then \"Extract\" else \"Replicat\",\n    Sort: if l.process == \"EWEST\" then 1 else if l.process == \"RWEST\" then 2 else if l.process == \"EEAST\" then 3 else 4,\n    Status: r.Status,\n    \"Checkpoint lag\": r[\"Checkpoint lag\"],\n    \"Heartbeat lag\": r[\"Heartbeat lag\"],\n    \"Trail sequence\": r[\"Trail sequence\"],\n    \"Trail RBA\": r[\"Trail RBA\"],\n    \"Inserts/s\": r[\"Inserts/s\"],\n    \"Updates/s\": r[\"Updates/s\"],\n    \"Deletes/s\": r[\"Deletes/s\"],\n    Discards: r.Discards,\n    \"Failed conflicts\": r[\"Failed conflicts\"],\n    \"Batch errors\": r[\"Batch errors\"],\n  }),\n)\n  |> filter(fn: (r) => r.Process != \"_schema\")\n  |> group()\n  |> sort(columns: [\"Sort\"])\n",
+          "query": "import \"array\"\nimport \"join\"\n\nwide = union(tables: [\n  array.from(rows: [\n    {process: \"_schema\", _field: \"Status\", _value: -1.0},\n    {process: \"_schema\", _field: \"Checkpoint lag\", _value: 0.0},\n    {process: \"_schema\", _field: \"Heartbeat lag\", _value: 0.0},\n    {process: \"_schema\", _field: \"Trail sequence\", _value: 0.0},\n    {process: \"_schema\", _field: \"Trail RBA\", _value: 0.0},\n    {process: \"_schema\", _field: \"Inserts/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Updates/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Deletes/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Discards\", _value: 0.0},\n    {process: \"_schema\", _field: \"Failed conflicts\", _value: 0.0},\n    {process: \"_schema\", _field: \"Conversion errors\", _value: 0.0},\n  ]),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"resource-status_running\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"resource-name\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"resource-name\"])\n    |> group(columns: [\"resource-name\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"resource-name\"], _field: \"Status\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Checkpoint lag\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"heartbeat-timings_heartbeat-lag\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"heartbeat-name\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"heartbeat-name\"])\n    |> group(columns: [\"heartbeat-name\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"heartbeat-name\"], _field: \"Heartbeat lag\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-output_trail-seq\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail sequence\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-input_trail-seq\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail sequence\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-output_trail-rba\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail RBA\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-input_trail-rba\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail RBA\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Inserts/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Inserts/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Updates/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Updates/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Deletes/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Deletes/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Discards\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Discards\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conflicts-failed\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Failed conflicts\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conversion-errors\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Conversion errors\", _value: float(v: r._value)}))\n    |> group()\n])\n  |> group(columns: [\"process\", \"_field\"])\n  |> max()\n  |> group()\n  |> pivot(rowKey: [\"process\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nskeleton = array.from(rows: [\n  {process: \"EWEST\"},\n  {process: \"RWEST\"},\n  {process: \"EEAST\"},\n  {process: \"REAST\"},\n])\n  |> filter(fn: (r) => r.process =~ /${process:regex}/)\n\njoin.left(\n  left: skeleton,\n  right: wide,\n  on: (l, r) => l.process == r.process,\n  as: (l, r) => ({\n    Process: l.process,\n    Path: if l.process == \"EWEST\" or l.process == \"RWEST\" then \"West → East\" else \"East → West\",\n    Role: if l.process == \"EWEST\" or l.process == \"EEAST\" then \"Extract\" else \"Replicat\",\n    Sort: if l.process == \"EWEST\" then 1 else if l.process == \"RWEST\" then 2 else if l.process == \"EEAST\" then 3 else 4,\n    Status: r.Status,\n    \"Checkpoint lag\": r[\"Checkpoint lag\"],\n    \"Heartbeat lag\": r[\"Heartbeat lag\"],\n    \"Trail sequence\": r[\"Trail sequence\"],\n    \"Trail RBA\": r[\"Trail RBA\"],\n    \"Inserts/s\": r[\"Inserts/s\"],\n    \"Updates/s\": r[\"Updates/s\"],\n    \"Deletes/s\": r[\"Deletes/s\"],\n    Discards: r.Discards,\n    \"Failed conflicts\": r[\"Failed conflicts\"],\n    \"Conversion errors\": r[\"Conversion errors\"],\n  }),\n)\n  |> filter(fn: (r) => r.Process != \"_schema\")\n  |> group()\n  |> sort(columns: [\"Sort\"])\n",
           "refId": "A"
         }
       ],
@@ -1031,7 +1006,7 @@
               "Deletes/s": 10,
               "Discards": 11,
               "Failed conflicts": 12,
-              "Batch errors": 13
+              "Conversion errors": 13
             },
             "renameByName": {}
           }
@@ -1040,7 +1015,7 @@
     },
     {
       "type": "row",
-      "title": "West \u2192 East    \u00b7    EWEST captures West, RWEST applies on East, trail ew",
+      "title": "West → East    ·    EWEST captures West, RWEST applies on East, trail ew",
       "collapsed": false,
       "panels": [],
       "id": 8,
@@ -1123,7 +1098,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -1203,7 +1178,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -1423,7 +1398,8 @@
             "lineWidth": 2,
             "pointSize": 4,
             "scaleDistribution": {
-              "type": "linear"
+              "type": "log",
+              "log": 10
             },
             "showPoints": "never",
             "spanNulls": false,
@@ -1493,7 +1469,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -1507,7 +1483,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Operations per second",
+      "title": "Operations per minute",
       "description": "Insert, update, and delete rates. These are per-second rates from the cumulative mapped counters, so a restart does not draw a negative spike.",
       "datasource": {
         "type": "influxdb",
@@ -1528,7 +1504,7 @@
               }
             ]
           },
-          "unit": "cps",
+          "unit": "opm",
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -1537,7 +1513,7 @@
             "axisSoftMin": 0,
             "barAlignment": 0,
             "drawStyle": "bars",
-            "fillOpacity": 70,
+            "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -1562,7 +1538,7 @@
             }
           },
           "displayName": "${__field.labels.processName} ${__field.name}",
-          "decimals": 2
+          "decimals": 0
         },
         "overrides": [
           {
@@ -1634,7 +1610,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "query": "import \"date\"\n\nunion(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -1648,7 +1624,7 @@
     },
     {
       "type": "row",
-      "title": "East \u2192 West    \u00b7    EEAST captures East, REAST applies on West, trail ee",
+      "title": "East → West    ·    EEAST captures East, REAST applies on West, trail ee",
       "collapsed": false,
       "panels": [],
       "id": 15,
@@ -1731,7 +1707,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EEAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EEAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -1811,7 +1787,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -2031,7 +2007,8 @@
             "lineWidth": 2,
             "pointSize": 4,
             "scaleDistribution": {
-              "type": "linear"
+              "type": "log",
+              "log": 10
             },
             "showPoints": "never",
             "spanNulls": false,
@@ -2101,7 +2078,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -2115,7 +2092,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Operations per second",
+      "title": "Operations per minute",
       "description": "Insert, update, and delete rates. These are per-second rates from the cumulative mapped counters, so a restart does not draw a negative spike.",
       "datasource": {
         "type": "influxdb",
@@ -2136,7 +2113,7 @@
               }
             ]
           },
-          "unit": "cps",
+          "unit": "opm",
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -2145,7 +2122,7 @@
             "axisSoftMin": 0,
             "barAlignment": 0,
             "drawStyle": "bars",
-            "fillOpacity": 70,
+            "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -2170,7 +2147,7 @@
             }
           },
           "displayName": "${__field.labels.processName} ${__field.name}",
-          "decimals": 2
+          "decimals": 0
         },
         "overrides": [
           {
@@ -2242,7 +2219,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "query": "import \"date\"\n\nunion(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -2256,10 +2233,10 @@
     },
     {
       "type": "row",
-      "title": "Lag across both paths",
+      "title": "Open transactions and services",
       "collapsed": false,
       "panels": [],
-      "id": 22,
+      "id": 51,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -2273,8 +2250,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Checkpoint lag",
-      "description": "Last-operation lag for every selected process. Use this to see which path degraded and when.",
+      "title": "Open transactions",
+      "description": "Distinct source transactions the extract was holding open in each interval. A transaction that stays open keeps the extract from advancing its recovery point.",
       "datasource": {
         "type": "influxdb",
         "uid": "bdkbvyvidpvcwc"
@@ -2291,22 +2268,10 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5000
-              },
-              {
-                "color": "orange",
-                "value": 30000
-              },
-              {
-                "color": "red",
-                "value": 120000
               }
             ]
           },
-          "unit": "ms",
+          "unit": "short",
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -2314,7 +2279,7 @@
             "axisPlacement": "auto",
             "axisSoftMin": 0,
             "barAlignment": 0,
-            "drawStyle": "line",
+            "drawStyle": "bars",
             "fillOpacity": 16,
             "gradientMode": "opacity",
             "hideFrom": {
@@ -2336,11 +2301,12 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "dashed"
+              "mode": "off"
             }
           },
           "displayName": "${__field.labels.processName}",
-          "decimals": 1
+          "decimals": 0,
+          "noValue": "0"
         },
         "overrides": [
           {
@@ -2427,22 +2393,22 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
-          "refId": "A"
+          "refId": "A",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"current-inflight-transactions_transaction_size\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"processName\", \"transaction-xid\"])\n  |> group(columns: [\"processName\"])\n  |> window(every: v.windowPeriod)\n  |> distinct(column: \"transaction-xid\")\n  |> count()\n  |> map(fn: (r) => ({_time: r._stop, processName: r.processName, _value: r._value}))\n  |> group(columns: [\"processName\"])"
         }
       ],
-      "id": 23,
+      "id": 52,
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 49
       }
     },
     {
       "type": "timeseries",
-      "title": "Heartbeat lag",
-      "description": "End-to-end heartbeat lag. This moves even when the mapped DML counters are idle, because the heartbeat update still has to cross the path.",
+      "title": "Largest open transaction",
+      "description": "Size of the biggest open transaction per extract, in records. Very large transactions are a common cause of extract lag.",
       "datasource": {
         "type": "influxdb",
         "uid": "bdkbvyvidpvcwc"
@@ -2459,22 +2425,10 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 90000
-              },
-              {
-                "color": "orange",
-                "value": 180000
-              },
-              {
-                "color": "red",
-                "value": 300000
               }
             ]
           },
-          "unit": "ms",
+          "unit": "short",
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -2504,11 +2458,12 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "dashed"
+              "mode": "off"
             }
           },
-          "displayName": "${__field.labels.heartbeat-name}",
-          "decimals": 1
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0,
+          "noValue": "0"
         },
         "overrides": [
           {
@@ -2595,105 +2550,97 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"heartbeat-timings_heartbeat-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"heartbeat-name\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"heartbeat-name\"])\n  |> group(columns: [\"heartbeat-name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
-          "refId": "A"
+          "refId": "A",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"current-inflight-transactions_transaction_size\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)"
         }
       ],
-      "id": 24,
+      "id": 53,
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 49
       }
     },
     {
-      "type": "timeseries",
-      "title": "Low and high watermark lag",
-      "description": "Low watermark is the oldest operation still considered outstanding. High watermark is the newest one processed. A widening gap means a long transaction is holding the process.",
+      "type": "stat",
+      "title": "GoldenGate services",
+      "description": "Health that each GoldenGate service reports for itself.",
       "datasource": {
         "type": "influxdb",
         "uid": "bdkbvyvidpvcwc"
       },
+      "transparent": false,
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unhealthy",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Healthy",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 2
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 5000
-              },
-              {
-                "color": "orange",
-                "value": 30000
-              },
-              {
-                "color": "red",
-                "value": 120000
+                "color": "green",
+                "value": 1
               }
             ]
           },
-          "unit": "ms",
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisPlacement": "auto",
-            "axisSoftMin": 0,
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 16,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 4,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "dashed"
-            }
-          },
-          "displayName": "${__field.labels.processName} ${__field.name}",
-          "decimals": 1
+          "unit": "short",
+          "displayName": "${__field.labels.service}",
+          "decimals": 0
         },
         "overrides": []
       },
       "options": {
-        "legend": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
           "calcs": [
-            "lastNotNull",
-            "max",
-            "mean"
+            "lastNotNull"
           ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
         }
       },
       "targets": [
@@ -2702,16 +2649,16 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_low-watermark-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> map(fn: (r) => ({r with _field: \"low watermark\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_high-watermark-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> map(fn: (r) => ({r with _field: \"high watermark\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
-          "refId": "A"
+          "refId": "A",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"service-health_service-healthy\" and r._field == \"value\")\n  |> group(columns: [\"processType\"])\n  |> last()\n  |> map(fn: (r) => ({\n      _time: r._time,\n      _value: r._value,\n      service: if r.processType == \"adminsrvr\" then \"Administration\"\n               else if r.processType == \"distsrvr\" then \"Distribution\"\n               else if r.processType == \"recvsrvr\" then \"Receiver\"\n               else if r.processType == \"pmsrvr\" then \"Performance metrics\"\n               else r.processType,\n  }))\n  |> group(columns: [\"service\"])"
         }
       ],
-      "id": 25,
+      "id": 54,
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 57
+        "w": 8,
+        "x": 16,
+        "y": 49
       }
     },
     {
@@ -2724,7 +2671,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 57
       },
       "datasource": {
         "type": "influxdb",
@@ -2733,7 +2680,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Mapped DML per second",
+      "title": "Mapped DML per minute",
       "description": "Mapped inserts, updates, and deletes per second. Compare an extract with the replicat on the same trail: if the extract stays ahead, the replicat is falling behind.",
       "datasource": {
         "type": "influxdb",
@@ -2754,7 +2701,7 @@
               }
             ]
           },
-          "unit": "cps",
+          "unit": "opm",
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -2763,7 +2710,7 @@
             "axisSoftMin": 0,
             "barAlignment": 0,
             "drawStyle": "bars",
-            "fillOpacity": 70,
+            "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -2788,7 +2735,7 @@
             }
           },
           "displayName": "${__field.labels.processName} ${__field.name}",
-          "decimals": 2
+          "decimals": 0
         },
         "overrides": [
           {
@@ -2860,7 +2807,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "query": "import \"date\"\n\nunion(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -2869,12 +2816,12 @@
         "h": 8,
         "w": 16,
         "x": 0,
-        "y": 66
+        "y": 58
       }
     },
     {
       "type": "bargauge",
-      "title": "Current operations per second",
+      "title": "Operations in the last full minute",
       "description": "Sum of insert, update, and delete rates for each process, averaged over the dashboard interval.",
       "datasource": {
         "type": "influxdb",
@@ -2895,10 +2842,10 @@
               }
             ]
           },
-          "unit": "cps",
+          "unit": "opm",
           "displayName": "${__field.labels.processName}",
           "min": 0,
-          "decimals": 2
+          "decimals": 0
         },
         "overrides": [
           {
@@ -2987,7 +2934,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\n  |> map(fn: (r) => ({_time: r._time, processName: r.processName, _value: r._value, _field: \"ops\"}))\n  |> group(columns: [\"processName\", \"_time\"])\n  |> sum()\n  |> group(columns: [\"processName\"])\n",
+          "query": "import \"date\"\n\nunion(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\n  |> map(fn: (r) => ({_time: r._time, processName: r.processName, _value: r._value, _field: \"ops\"}))\n  |> group(columns: [\"processName\", \"_time\"])\n  |> sum()\n  |> group(columns: [\"processName\"])\n",
           "refId": "A"
         }
       ],
@@ -2996,7 +2943,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 66
+        "y": 58
       }
     },
     {
@@ -3068,7 +3015,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 74
+        "y": 66
       }
     },
     {
@@ -3140,13 +3087,13 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 74
+        "y": 66
       }
     },
     {
       "type": "stat",
-      "title": "Batch errors",
-      "description": "Integrated replicat batches that hit an error and had to leave batch mode. Count since the process started.",
+      "title": "Conversion errors",
+      "description": "Replicat column conversion errors (cumulative).",
       "datasource": {
         "type": "influxdb",
         "uid": "bdkbvyvidpvcwc"
@@ -3173,7 +3120,8 @@
           },
           "unit": "short",
           "displayName": "${__field.labels.processName}",
-          "decimals": 0
+          "decimals": 0,
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -3203,7 +3151,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch-sql-stats_total-batches-in-error\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conversion-errors\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -3212,13 +3160,13 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 74
+        "y": 66
       }
     },
     {
       "type": "stat",
-      "title": "Key collisions",
-      "description": "Primary, unique, and foreign key collisions while integrated replicat was applying in batches. Count since the process started.",
+      "title": "Row collisions",
+      "description": "Replicat rows that already existed on insert/update/delete, or were missing on update/delete (cumulative).",
       "datasource": {
         "type": "influxdb",
         "uid": "bdkbvyvidpvcwc"
@@ -3245,7 +3193,8 @@
           },
           "unit": "short",
           "displayName": "${__field.labels.processName}",
-          "decimals": 0
+          "decimals": 0,
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -3275,7 +3224,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "summed = (measurement) =>\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == measurement and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({processName: r.processName, _value: float(v: r._value), _field: \"collisions\"}))\n\nunion(tables: [\n  summed(measurement: \"batch-sql-stats_total-primary-key-collisions\"),\n  summed(measurement: \"batch-sql-stats_total-foreign-key-collisions\"),\n  summed(measurement: \"batch-sql-stats_total-unique-key-collisions\"),\n])\n  |> group(columns: [\"processName\"])\n  |> sum()\n",
+          "query": "summed = (measurement) =>\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == measurement and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({processName: r.processName, _value: float(v: r._value), _field: \"collisions\"}))\n\nunion(tables: [\n  summed(measurement: \"statistics-replicat_total-insert-row-exists\"),\n  summed(measurement: \"statistics-replicat_total-update-row-missing\"),\n  summed(measurement: \"statistics-replicat_total-delete-row-missing\"),\n  summed(measurement: \"statistics-replicat_total-update-row-exists\"),\n  summed(measurement: \"statistics-replicat_total-delete-row-exists\"),\n])\n  |> group(columns: [\"processName\"])\n  |> sum()\n",
           "refId": "A"
         }
       ],
@@ -3284,7 +3233,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 74
+        "y": 66
       }
     },
     {
@@ -3370,7 +3319,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"discards\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"discards\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conflicts-failed\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"failed conflicts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch-sql-stats_total-batches-in-error\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"batch errors\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch-sql-stats_total-primary-key-collisions\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"pk collisions\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch-sql-stats_total-foreign-key-collisions\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"fk collisions\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch-sql-stats_total-unique-key-collisions\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"uk collisions\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"discards\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"discards\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conflicts-failed\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"failed conflicts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conversion-errors\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"conversion errors\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-insert-row-exists\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"insert row exists\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-update-row-missing\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"update row missing\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-delete-row-missing\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"delete row missing\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -3379,7 +3328,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 70
       }
     },
     {
@@ -3392,7 +3341,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 78
       },
       "datasource": {
         "type": "influxdb",
@@ -3543,7 +3492,7 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-output_io-write-bytes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"trail write\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-input_io-read-bytes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"trail read\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-output_io-write-bytes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"trail write\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-input_io-read-bytes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"trail read\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
           "refId": "A"
         }
       ],
@@ -3552,13 +3501,13 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 87
+        "y": 79
       }
     },
     {
       "type": "timeseries",
-      "title": "Trail sequence",
-      "description": "Current trail file sequence. Extracts show the file they are writing. Replicats show the file they are reading. The replicat sequence should catch the extract sequence on the same trail.",
+      "title": "Trail read errors",
+      "description": "New trail read errors per second on the replicats. These should stay at zero. A sustained rate means the trail file is unreadable or incomplete.",
       "datasource": {
         "type": "influxdb",
         "uid": "bdkbvyvidpvcwc"
@@ -3575,10 +3524,14 @@
               {
                 "color": "green",
                 "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
               }
             ]
           },
-          "unit": "none",
+          "unit": "cps",
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -3587,7 +3540,7 @@
             "axisSoftMin": 0,
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 16,
             "gradientMode": "opacity",
             "hideFrom": {
               "legend": false,
@@ -3595,7 +3548,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "stepAfter",
+            "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 4,
             "scaleDistribution": {
@@ -3608,74 +3561,13 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "dashed"
             }
           },
           "displayName": "${__field.labels.processName}",
-          "decimals": 0
+          "decimals": 3
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/EWEST/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#3B82F6",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/EEAST/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#F59E0B",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/RWEST/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#22C55E",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/REAST/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#A855F7",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "legend": {
@@ -3699,16 +3591,16 @@
             "type": "influxdb",
             "uid": "bdkbvyvidpvcwc"
           },
-          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-output_trail-seq\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"]),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-input_trail-seq\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-input_trail-read-errors\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"read errors\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
           "refId": "A"
         }
       ],
-      "id": 36,
+      "id": 38,
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 79
       }
     },
     {
@@ -3862,108 +3754,9 @@
       "id": 37,
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 95
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Trail read errors",
-      "description": "New trail read errors per second on the replicats. These should stay at zero. A sustained rate means the trail file is unreadable or incomplete.",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "bdkbvyvidpvcwc"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "cps",
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisPlacement": "auto",
-            "axisSoftMin": 0,
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 16,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 4,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "dashed"
-            }
-          },
-          "displayName": "${__field.labels.processName}",
-          "decimals": 3
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull",
-            "max",
-            "mean"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "bdkbvyvidpvcwc"
-          },
-          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-input_trail-read-errors\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"read errors\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
-          "refId": "A"
-        }
-      ],
-      "id": 38,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 95
+        "y": 87
       }
     },
     {
@@ -4150,7 +3943,7 @@
                   }
                 ]
               },
-              "unit": "short",
+              "unit": "percentunit",
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -4182,7 +3975,7 @@
                 "thresholdsStyle": {
                   "mode": "off"
                 },
-                "axisLabel": "cores"
+                "axisLabel": "of one core"
               },
               "displayName": "${__field.labels.processName}",
               "decimals": 2
@@ -4272,7 +4065,7 @@
                 "type": "influxdb",
                 "uid": "bdkbvyvidpvcwc"
               },
-              "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"process-performance_cpu-time\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _value: r._value / 1000000.0}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+              "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"process-performance_cpu-time\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
               "refId": "A"
             }
           ],
@@ -4290,7 +4083,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 103
+        "y": 95
       }
     },
     {
@@ -4502,7 +4295,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 104
+        "y": 96
       }
     }
   ],
