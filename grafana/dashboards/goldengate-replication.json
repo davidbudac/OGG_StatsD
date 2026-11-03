@@ -1,0 +1,4374 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Health, lag, throughput, and apply errors for bidirectional Oracle GoldenGate replication between West and East.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "text",
+      "transparent": true,
+      "title": "Replication paths",
+      "options": {
+        "mode": "markdown",
+        "content": "**West → East** is extract **EWEST** and replicat **RWEST** on trail `ew`. **East → West** is extract **EEAST** and replicat **REAST** on trail `ee`. Checkpoint lag is how far that process is behind the change it is reading. Heartbeat lag is end-to-end; heartbeats are written every 60 seconds. Discards, failed conflicts, and conversion errors should stay at zero."
+      },
+      "id": 1,
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Process health",
+      "description": "One tile per process. Stopped; Stalled (running but not caught up, and its trail position has not moved for 2 minutes; lag metrics freeze in this state, so they look fine); Lagging (last operation more than 60 s behind); Processing; Caught up.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Stopped",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Stalled",
+                  "color": "red",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Lagging",
+                  "color": "orange",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Processing",
+                  "color": "green",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Caught up",
+                  "color": "green",
+                  "index": 4
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "green",
+                "value": 3
+              }
+            ]
+          },
+          "unit": "short",
+          "displayName": "${__field.labels.process}",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "refId": "A",
+          "query": "import \"date\"\n\nrunning = from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"resource-status_running\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"resource-name\"] =~ /${process:regex}/)\n  |> group(columns: [\"resource-name\"])\n  |> last()\n  |> map(fn: (r) => ({process: r[\"resource-name\"], _field: \"running\", _value: float(v: r._value)}))\n  |> group()\neof = from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_end-of-file\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> group(columns: [\"processName\"])\n  |> last()\n  |> map(fn: (r) => ({process: r.processName, _field: \"eof\", _value: float(v: r._value)}))\n  |> group()\nlag = from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> group(columns: [\"processName\"])\n  |> last()\n  // GoldenGate reports this lag in nanoseconds; convert to seconds\n  |> map(fn: (r) => ({process: r.processName, _field: \"lag\", _value: float(v: r._value) / 1000000000.0}))\n  |> group()\n\n// Has the process advanced its trail position in the last 2 minutes? (replicats: read side, extracts: write side)\nmoved = from(bucket: \"goldengate-bucket\")\n  |> range(start: date.sub(d: 2m, from: v.timeRangeStop), stop: v.timeRangeStop)\n  |> filter(fn: (r) => (r._measurement == \"trail-input_trail-rba\" and r.processType == \"replicat\") or (r._measurement == \"trail-output_trail-rba\" and r.processType == \"extract\"))\n  |> filter(fn: (r) => r._field == \"value\" and r.processName =~ /${process:regex}/)\n  |> group(columns: [\"processName\"])\n  |> spread()\n  |> map(fn: (r) => ({process: r.processName, _field: \"moved\", _value: if r._value > 0 then 1.0 else 0.0}))\n  |> group()\n\n// 0 stopped, 1 stalled (not caught up, position frozen 2 min), 2 lagging (> 60 s behind), 3 processing, 4 caught up\nunion(tables: [running, eof, lag, moved])\n  |> group(columns: [\"process\"])\n  |> pivot(rowKey: [\"process\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time: v.timeRangeStop,\n      process: r.process,\n      _value: if not exists r.running or r.running < 0.5 then 0.0\n              else if exists r.eof and r.eof < 0.5 and exists r.moved and r.moved < 0.5 then 1.0\n              else if exists r.lag and r.lag > 60.0 then 2.0\n              else if exists r.eof and r.eof < 0.5 then 3.0\n              else 4.0,\n  }))\n  |> group(columns: [\"process\"])"
+        }
+      ],
+      "id": 50,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Checkpoint lag",
+      "description": "Lag of the last operation processed, in milliseconds. Under 5 seconds is healthy for this lab. Over 30 seconds the path is falling behind. Over 2 minutes it needs attention.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "orange",
+                "value": 30000
+              },
+              {
+                "color": "red",
+                "value": 120000
+              }
+            ]
+          },
+          "unit": "ms",
+          "displayName": "${__field.labels.processName}",
+          "min": 0,
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 4,
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 3
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Heartbeat lag",
+      "description": "End-to-end heartbeat lag, in milliseconds. The heartbeat table is updated every 60 seconds, so a quiet healthy path sits around that interval. Several minutes means the path is stalled.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90000
+              },
+              {
+                "color": "orange",
+                "value": 180000
+              },
+              {
+                "color": "red",
+                "value": 300000
+              }
+            ]
+          },
+          "unit": "ms",
+          "displayName": "${__field.labels.heartbeat-name}",
+          "min": 0,
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"heartbeat-timings_heartbeat-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"heartbeat-name\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"heartbeat-name\"])\n  |> group(columns: [\"heartbeat-name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 5,
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 3
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Running history",
+      "description": "When each extract and replicat was running. A gap is a missed sample, not a clean shutdown.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineWidth": 0,
+            "spanNulls": false
+          },
+          "displayName": "${__field.labels.resource-name}",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Stopped",
+                  "color": "red",
+                  "index": 3
+                },
+                "1": {
+                  "text": "Running",
+                  "color": "green",
+                  "index": 4
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": -0.1,
+                "to": 0.5,
+                "result": {
+                  "color": "red",
+                  "index": 0,
+                  "text": "Stopped"
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 0.5,
+                "to": 1.5,
+                "result": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "Running"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "color": "text",
+                  "index": 2,
+                  "text": "No data"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "alignValue": "center",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "showValue": "never",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"resource-status_running\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"resource-name\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"resource-name\"])\n  |> group(columns: [\"resource-name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 6,
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      }
+    },
+    {
+      "type": "table",
+      "title": "Replication snapshot",
+      "description": "One row per process for the selected time range. Rates are the average change per second of the GoldenGate cumulative counters. Sequence and RBA are the extract output trail for EWEST and EEAST, and the replicat input trail for RWEST and REAST.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false,
+            "minWidth": 70
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sort"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": -0.1,
+                      "to": 0.5,
+                      "result": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "Stopped"
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 0.5,
+                      "to": 1.5,
+                      "result": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "Running"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "color": "text",
+                        "index": 2,
+                        "text": "No data"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Checkpoint lag"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 5000
+                    },
+                    {
+                      "color": "orange",
+                      "value": 30000
+                    },
+                    {
+                      "color": "red",
+                      "value": 120000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Heartbeat lag"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 90000
+                    },
+                    {
+                      "color": "orange",
+                      "value": 180000
+                    },
+                    {
+                      "color": "red",
+                      "value": 300000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trail sequence"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trail RBA"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Inserts/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "cps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Updates/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "cps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Deletes/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "cps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Discards"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Failed conflicts"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conversion errors"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Process"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Path"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trail sequence"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trail RBA"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Sort"
+          }
+        ],
+        "footer": {
+          "countRows": false,
+          "reducer": [],
+          "show": false
+        },
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "import \"array\"\nimport \"join\"\n\nwide = union(tables: [\n  array.from(rows: [\n    {process: \"_schema\", _field: \"Status\", _value: -1.0},\n    {process: \"_schema\", _field: \"Checkpoint lag\", _value: 0.0},\n    {process: \"_schema\", _field: \"Heartbeat lag\", _value: 0.0},\n    {process: \"_schema\", _field: \"Trail sequence\", _value: 0.0},\n    {process: \"_schema\", _field: \"Trail RBA\", _value: 0.0},\n    {process: \"_schema\", _field: \"Inserts/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Updates/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Deletes/s\", _value: 0.0},\n    {process: \"_schema\", _field: \"Discards\", _value: 0.0},\n    {process: \"_schema\", _field: \"Failed conflicts\", _value: 0.0},\n    {process: \"_schema\", _field: \"Conversion errors\", _value: 0.0},\n  ]),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"resource-status_running\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"resource-name\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"resource-name\"])\n    |> group(columns: [\"resource-name\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"resource-name\"], _field: \"Status\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Checkpoint lag\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"heartbeat-timings_heartbeat-lag\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"heartbeat-name\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"heartbeat-name\"])\n    |> group(columns: [\"heartbeat-name\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"heartbeat-name\"], _field: \"Heartbeat lag\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-output_trail-seq\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail sequence\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-input_trail-seq\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail sequence\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-output_trail-rba\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail RBA\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"trail-input_trail-rba\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Trail RBA\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Inserts/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Inserts/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Updates/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Updates/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Deletes/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> sort(columns: [\"_time\"])\n    |> derivative(unit: 1s, nonNegative: true)\n    |> mean()\n    |> map(fn: (r) => ({process: r.processName, _field: \"Deletes/s\", _value: r._value}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Discards\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Discards\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conflicts-failed\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Failed conflicts\", _value: float(v: r._value)}))\n    |> group(),\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conversion-errors\" and r._field == \"value\")\n    |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n    |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({process: r[\"processName\"], _field: \"Conversion errors\", _value: float(v: r._value)}))\n    |> group()\n])\n  |> group(columns: [\"process\", \"_field\"])\n  |> max()\n  |> group()\n  |> pivot(rowKey: [\"process\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nskeleton = array.from(rows: [\n  {process: \"EWEST\"},\n  {process: \"RWEST\"},\n  {process: \"EEAST\"},\n  {process: \"REAST\"},\n])\n  |> filter(fn: (r) => r.process =~ /${process:regex}/)\n\njoin.left(\n  left: skeleton,\n  right: wide,\n  on: (l, r) => l.process == r.process,\n  as: (l, r) => ({\n    Process: l.process,\n    Path: if l.process == \"EWEST\" or l.process == \"RWEST\" then \"West → East\" else \"East → West\",\n    Role: if l.process == \"EWEST\" or l.process == \"EEAST\" then \"Extract\" else \"Replicat\",\n    Sort: if l.process == \"EWEST\" then 1 else if l.process == \"RWEST\" then 2 else if l.process == \"EEAST\" then 3 else 4,\n    Status: r.Status,\n    \"Checkpoint lag\": r[\"Checkpoint lag\"],\n    \"Heartbeat lag\": r[\"Heartbeat lag\"],\n    \"Trail sequence\": r[\"Trail sequence\"],\n    \"Trail RBA\": r[\"Trail RBA\"],\n    \"Inserts/s\": r[\"Inserts/s\"],\n    \"Updates/s\": r[\"Updates/s\"],\n    \"Deletes/s\": r[\"Deletes/s\"],\n    Discards: r.Discards,\n    \"Failed conflicts\": r[\"Failed conflicts\"],\n    \"Conversion errors\": r[\"Conversion errors\"],\n  }),\n)\n  |> filter(fn: (r) => r.Process != \"_schema\")\n  |> group()\n  |> sort(columns: [\"Sort\"])\n",
+          "refId": "A"
+        }
+      ],
+      "id": 7,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Sort": true
+            },
+            "indexByName": {
+              "Process": 0,
+              "Path": 1,
+              "Role": 2,
+              "Status": 3,
+              "Checkpoint lag": 4,
+              "Heartbeat lag": 5,
+              "Trail sequence": 6,
+              "Trail RBA": 7,
+              "Inserts/s": 8,
+              "Updates/s": 9,
+              "Deletes/s": 10,
+              "Discards": 11,
+              "Failed conflicts": 12,
+              "Conversion errors": 13
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "West → East    ·    EWEST captures West, RWEST applies on East, trail ew",
+      "collapsed": false,
+      "panels": [],
+      "id": 8,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "EWEST checkpoint lag",
+      "description": "How far extract EWEST is behind the source database.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "orange",
+                "value": 30000
+              },
+              {
+                "color": "red",
+                "value": 120000
+              }
+            ]
+          },
+          "unit": "ms",
+          "displayName": "EWEST",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 9,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 23
+      }
+    },
+    {
+      "type": "stat",
+      "title": "RWEST checkpoint lag",
+      "description": "How far replicat RWEST is behind the trail it is applying.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "orange",
+                "value": 30000
+              },
+              {
+                "color": "red",
+                "value": 120000
+              }
+            ]
+          },
+          "unit": "ms",
+          "displayName": "RWEST",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 10,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 23
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Heartbeat lag",
+      "description": "End-to-end heartbeat lag for this direction.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90000
+              },
+              {
+                "color": "orange",
+                "value": 180000
+              },
+              {
+                "color": "red",
+                "value": 300000
+              }
+            ]
+          },
+          "unit": "ms",
+          "displayName": "${__field.labels.heartbeat-name}",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"heartbeat-timings_heartbeat-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"heartbeat-name\"] =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"heartbeat-name\"])\n  |> group(columns: [\"heartbeat-name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 11,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 23
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Discards",
+      "description": "Operations discarded since the process started. Anything above zero is data that did not replicate.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"]),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 12,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 23
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Checkpoint lag",
+      "description": "Checkpoint lag for this direction. A replicat line above its extract line means apply is the bottleneck.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "orange",
+                "value": 30000
+              },
+              {
+                "color": "red",
+                "value": 120000
+              }
+            ]
+          },
+          "unit": "ms",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 16,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "log",
+              "log": 10
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "displayName": "${__field.labels.processName}",
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/RWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 13,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Operations per minute",
+      "description": "Insert, update, and delete rates. These are per-second rates from the cumulative mapped counters, so a restart does not draw a negative spike.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "opm",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.processName} ${__field.name}",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/inserts/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/updates/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/deletes/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F97316",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "import \"date\"\n\nunion(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|RWEST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 14,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      }
+    },
+    {
+      "type": "row",
+      "title": "East → West    ·    EEAST captures East, REAST applies on West, trail ee",
+      "collapsed": false,
+      "panels": [],
+      "id": 15,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "EEAST checkpoint lag",
+      "description": "How far extract EEAST is behind the source database.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "orange",
+                "value": 30000
+              },
+              {
+                "color": "red",
+                "value": 120000
+              }
+            ]
+          },
+          "unit": "ms",
+          "displayName": "EEAST",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EEAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 16,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 36
+      }
+    },
+    {
+      "type": "stat",
+      "title": "REAST checkpoint lag",
+      "description": "How far replicat REAST is behind the trail it is applying.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "orange",
+                "value": 30000
+              },
+              {
+                "color": "red",
+                "value": 120000
+              }
+            ]
+          },
+          "unit": "ms",
+          "displayName": "REAST",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 17,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 36
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Heartbeat lag",
+      "description": "End-to-end heartbeat lag for this direction.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90000
+              },
+              {
+                "color": "orange",
+                "value": 180000
+              },
+              {
+                "color": "red",
+                "value": 300000
+              }
+            ]
+          },
+          "unit": "ms",
+          "displayName": "${__field.labels.heartbeat-name}",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"heartbeat-timings_heartbeat-lag\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"heartbeat-name\"] =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"heartbeat-name\"])\n  |> group(columns: [\"heartbeat-name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 18,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 36
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Discards",
+      "description": "Operations discarded since the process started. Anything above zero is data that did not replicate.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"]),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 19,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 36
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Checkpoint lag",
+      "description": "Checkpoint lag for this direction. A replicat line above its extract line means apply is the bottleneck.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "orange",
+                "value": 30000
+              },
+              {
+                "color": "red",
+                "value": 120000
+              }
+            ]
+          },
+          "unit": "ms",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 16,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "log",
+              "log": 10
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "displayName": "${__field.labels.processName}",
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EEAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F59E0B",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/REAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#A855F7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"position-er_last-operation-lag\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000000.0}))  // GoldenGate reports this lag in nanoseconds\n  |> filter(fn: (r) => r[\"processName\"] =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 20,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Operations per minute",
+      "description": "Insert, update, and delete rates. These are per-second rates from the cumulative mapped counters, so a restart does not draw a negative spike.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "opm",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.processName} ${__field.name}",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/inserts/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/updates/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/deletes/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F97316",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "import \"date\"\n\nunion(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EEAST|REAST)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 21,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      }
+    },
+    {
+      "type": "row",
+      "title": "Open transactions and services",
+      "collapsed": false,
+      "panels": [],
+      "id": 51,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Open transactions",
+      "description": "Distinct source transactions the extract was holding open in each interval. A transaction that stays open keeps the extract from advancing its recovery point.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 16,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0,
+          "noValue": "0"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EEAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F59E0B",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/RWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/REAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#A855F7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "refId": "A",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"current-inflight-transactions_transaction_size\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"processName\", \"transaction-xid\"])\n  |> group(columns: [\"processName\"])\n  |> window(every: v.windowPeriod)\n  |> distinct(column: \"transaction-xid\")\n  |> count()\n  |> map(fn: (r) => ({_time: r._stop, processName: r.processName, _value: r._value}))\n  |> group(columns: [\"processName\"])"
+        }
+      ],
+      "id": 52,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 49
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Largest open transaction",
+      "description": "Size of the biggest open transaction per extract, in records. Very large transactions are a common cause of extract lag.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 16,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0,
+          "noValue": "0"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EEAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F59E0B",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/RWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/REAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#A855F7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "refId": "A",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"current-inflight-transactions_transaction_size\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)"
+        }
+      ],
+      "id": 53,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 49
+      }
+    },
+    {
+      "type": "stat",
+      "title": "GoldenGate services",
+      "description": "Health that each GoldenGate service reports for itself.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unhealthy",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Healthy",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 2
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "displayName": "${__field.labels.service}",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "refId": "A",
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"service-health_service-healthy\" and r._field == \"value\")\n  |> group(columns: [\"processType\"])\n  |> last()\n  |> map(fn: (r) => ({\n      _time: r._time,\n      _value: r._value,\n      service: if r.processType == \"adminsrvr\" then \"Administration\"\n               else if r.processType == \"distsrvr\" then \"Distribution\"\n               else if r.processType == \"recvsrvr\" then \"Receiver\"\n               else if r.processType == \"pmsrvr\" then \"Performance metrics\"\n               else r.processType,\n  }))\n  |> group(columns: [\"service\"])"
+        }
+      ],
+      "id": 54,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 49
+      }
+    },
+    {
+      "type": "row",
+      "title": "Throughput and apply errors",
+      "collapsed": false,
+      "panels": [],
+      "id": 26,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Mapped DML per minute",
+      "description": "Mapped inserts, updates, and deletes per second. Compare an extract with the replicat on the same trail: if the extract stays ahead, the replicat is falling behind.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "opm",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.processName} ${__field.name}",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/inserts/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/updates/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/deletes/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F97316",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "import \"date\"\n\nunion(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 27,
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 58
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Operations in the last full minute",
+      "description": "Sum of insert, update, and delete rates for each process, averaged over the dashboard interval.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "opm",
+          "displayName": "${__field.labels.processName}",
+          "min": 0,
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EEAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F59E0B",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/RWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/REAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#A855F7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "import \"date\"\n\nunion(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-inserts\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"inserts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-updates\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"updates\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_mapped-total-deletes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST|RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> filter(fn: (r) => r._time <= date.truncate(t: now(), unit: 1m))  // drop the unfinished minute\n  |> map(fn: (r) => ({r with _field: \"deletes\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\n  |> map(fn: (r) => ({_time: r._time, processName: r.processName, _value: r._value, _field: \"ops\"}))\n  |> group(columns: [\"processName\", \"_time\"])\n  |> sum()\n  |> group(columns: [\"processName\"])\n",
+          "refId": "A"
+        }
+      ],
+      "id": 28,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 58
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Discards",
+      "description": "Rows the process gave up on. A non-zero value is data missing on the target. Count since the process started.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"]),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 29,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 66
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failed conflicts",
+      "description": "Replicat conflicts that automatic conflict resolution could not settle. Count since the process started.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conflicts-failed\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 30,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 66
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Conversion errors",
+      "description": "Replicat column conversion errors (cumulative).",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0,
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conversion-errors\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 31,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 66
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Row collisions",
+      "description": "Replicat rows that already existed on insert/update/delete, or were missing on update/delete (cumulative).",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "transparent": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0,
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "summed = (measurement) =>\n  from(bucket: \"goldengate-bucket\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == measurement and r._field == \"value\")\n    |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n    |> group(columns: [\"processName\"])\n    |> last()\n    |> map(fn: (r) => ({processName: r.processName, _value: float(v: r._value), _field: \"collisions\"}))\n\nunion(tables: [\n  summed(measurement: \"statistics-replicat_total-insert-row-exists\"),\n  summed(measurement: \"statistics-replicat_total-update-row-missing\"),\n  summed(measurement: \"statistics-replicat_total-delete-row-missing\"),\n  summed(measurement: \"statistics-replicat_total-update-row-exists\"),\n  summed(measurement: \"statistics-replicat_total-delete-row-exists\"),\n])\n  |> group(columns: [\"processName\"])\n  |> sum()\n",
+          "refId": "A"
+        }
+      ],
+      "id": 32,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 66
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "New apply problems",
+      "description": "Per-second rate of new discards, failed conflicts, batch errors, and primary, foreign, or unique key collisions. A spike is a new problem. A flat zero means nothing new failed in the window.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "cps",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.processName} ${__field.name}",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-extract_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"discards\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-discards\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"discards\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conflicts-failed\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"failed conflicts\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-conversion-errors\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"conversion errors\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-insert-row-exists\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"insert row exists\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-update-row-missing\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"update row missing\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"statistics-replicat_total-delete-row-missing\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"delete row missing\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 33,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 70
+      }
+    },
+    {
+      "type": "row",
+      "title": "Trail position",
+      "collapsed": false,
+      "panels": [],
+      "id": 34,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 78
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Trail throughput",
+      "description": "Bytes per second written by the extracts and read by the replicats. Read rate stuck at zero while the extract is writing means the replicat is not consuming the trail.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "Bps",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 16,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.processName} ${__field.name}",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EEAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F59E0B",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/RWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/REAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#A855F7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-output_io-write-bytes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(EWEST|EEAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"trail write\"})),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-input_io-read-bytes\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /^(RWEST|REAST)$/)\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"trail read\"}))\n])\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 35,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 79
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Trail read errors",
+      "description": "New trail read errors per second on the replicats. These should stay at zero. A sustained rate means the trail file is unreadable or incomplete.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "cps",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 16,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "displayName": "${__field.labels.processName}",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-input_trail-read-errors\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _field: \"read errors\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\", \"processName\"])\n  |> group(columns: [\"processName\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 38,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 79
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Trail RBA",
+      "description": "Relative byte address inside the current trail file. It climbs as the file fills and drops back when the sequence rolls. Compare RBA only while both processes are on the same sequence.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "bdkbvyvidpvcwc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes",
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.processName}",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/EEAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F59E0B",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/RWEST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/REAST/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#A855F7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "query": "union(tables: [\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-output_trail-rba\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"]),\nfrom(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"trail-input_trail-rba\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+          "refId": "A"
+        }
+      ],
+      "id": 37,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 87
+      }
+    },
+    {
+      "type": "row",
+      "title": "Process resources",
+      "collapsed": true,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Process memory",
+          "description": "Working set of each GoldenGate process. A climb that never comes back usually means a transaction or cache is being held.",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "bytes",
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisPlacement": "auto",
+                "axisSoftMin": 0,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 16,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 4,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "displayName": "${__field.labels.processName}",
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/EWEST/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#3B82F6",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/EEAST/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#F59E0B",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/RWEST/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#22C55E",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/REAST/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#A855F7",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull",
+                "max",
+                "mean"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "bdkbvyvidpvcwc"
+              },
+              "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"process-performance_working-set-size\" and r._field == \"value\")\n  |> filter(fn: (r) => r[\"processName\"] =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n",
+              "refId": "A"
+            }
+          ],
+          "id": 40,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Process CPU",
+          "description": "CPU time consumed by the process, converted from the cumulative microsecond counter. 1.0 is one full core.",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "percentunit",
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisPlacement": "auto",
+                "axisSoftMin": 0,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 16,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 4,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "axisLabel": "of one core"
+              },
+              "displayName": "${__field.labels.processName}",
+              "decimals": 2
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/EWEST/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#3B82F6",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/EEAST/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#F59E0B",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/RWEST/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#22C55E",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "/REAST/"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#A855F7",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull",
+                "max",
+                "mean"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "bdkbvyvidpvcwc"
+              },
+              "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"process-performance_cpu-time\" and r._field == \"value\")\n  |> filter(fn: (r) => r.processName =~ /${process:regex}/)\n  |> keep(columns: [\"_time\", \"_value\", \"processName\"])\n  |> group(columns: [\"processName\"])\n  |> sort(columns: [\"_time\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+              "refId": "A"
+            }
+          ],
+          "id": 41,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          }
+        }
+      ],
+      "id": 39,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 95
+      }
+    },
+    {
+      "type": "row",
+      "title": "Collector host",
+      "collapsed": true,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Telegraf CPU",
+          "description": "CPU of the host Telegraf is running on. In this compose file that is the Telegraf container, not the database, unless you later run the agent on the GoldenGate host.",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "percent",
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisPlacement": "auto",
+                "axisSoftMin": 0,
+                "barAlignment": 0,
+                "drawStyle": "bars",
+                "fillOpacity": 70,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "stepAfter",
+                "lineWidth": 1,
+                "pointSize": 4,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "displayName": "${__field.name}",
+              "decimals": 1
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull",
+                "max",
+                "mean"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "bdkbvyvidpvcwc"
+              },
+              "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"cpu\" and r.cpu == \"cpu-total\")\n  |> filter(fn: (r) => r._field == \"usage_user\" or r._field == \"usage_system\" or r._field == \"usage_iowait\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group(columns: [\"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+              "refId": "A"
+            }
+          ],
+          "id": 43,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Telegraf memory",
+          "description": "Memory used on the Telegraf host, as a percent of that host.",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "bdkbvyvidpvcwc"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 95
+                  }
+                ]
+              },
+              "unit": "percent",
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisPlacement": "auto",
+                "axisSoftMin": 0,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 16,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 4,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "displayName": "used",
+              "decimals": 1
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull",
+                "max",
+                "mean"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "bdkbvyvidpvcwc"
+              },
+              "query": "from(bucket: \"goldengate-bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mem\" and r._field == \"used_percent\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+              "refId": "A"
+            }
+          ],
+          "id": 44,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          }
+        }
+      ],
+      "id": 42,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 96
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": [
+    "goldengate",
+    "replication"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "includeAll": true,
+        "label": "Process",
+        "multi": true,
+        "name": "process",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "EWEST",
+            "value": "EWEST"
+          },
+          {
+            "selected": false,
+            "text": "RWEST",
+            "value": "RWEST"
+          },
+          {
+            "selected": false,
+            "text": "EEAST",
+            "value": "EEAST"
+          },
+          {
+            "selected": false,
+            "text": "REAST",
+            "value": "REAST"
+          }
+        ],
+        "query": "EWEST,RWEST,EEAST,REAST",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
+  "timezone": "browser",
+  "title": "GoldenGate Replication",
+  "uid": "ogg-replication",
+  "version": 1,
+  "weekStart": ""
+}

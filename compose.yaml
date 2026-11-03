@@ -138,6 +138,7 @@ services:
       - grafana_data:/var/lib/grafana:rw
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./Main Dashboard-1714512160772.json:/etc/grafana/dashboards/main-dashboard.json:ro
+      - ./grafana/dashboards/goldengate-replication.json:/etc/grafana/dashboards/goldengate-replication.json:ro
     networks: 
       ogg_docker_network_234:
         ipv4_address: ${DOCKER_GRAFANA_IP}
